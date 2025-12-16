@@ -1,0 +1,26 @@
+# Railway deployment configuration for OpenEMR
+# https://docs.railway.app/reference/config-as-code
+
+[build]
+# Use the Dockerfile in this directory
+dockerfilePath = "railway/Dockerfile"
+
+[deploy]
+# OpenEMR needs significant time to initialize on first start
+# - Database schema creation
+# - Initial data population
+# - File permission setup
+# This can take 5-10 minutes on first boot
+
+# Number of replicas (keep at 1 for database consistency)
+numReplicas = 1
+
+# Restart policy
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+
+# Note: Health checks are intentionally not configured here
+# OpenEMR's long startup time can cause premature health check failures
+# After initial setup, you can enable health checks via Railway dashboard:
+#   Path: /
+#   Timeout: 300 seconds
