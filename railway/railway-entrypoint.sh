@@ -95,5 +95,7 @@ echo "IMPORTANT: Change these credentials immediately after login!"
 echo ""
 
 # Execute the standard OpenEMR entrypoint
+# Redirect stderr to stdout to prevent progress indicators from being logged as errors
+# OpenEMR's setup script writes progress dots/pluses to stderr, which Railway logs as errors
 cd /var/www/localhost/htdocs/openemr
-exec ./openemr.sh
+exec ./openemr.sh 2>&1
