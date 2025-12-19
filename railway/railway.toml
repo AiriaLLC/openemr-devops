@@ -13,6 +13,8 @@ dockerfilePath = "railway/Dockerfile"
 # This can take 5-10 minutes on first boot
 
 # Number of replicas (keep at 1 for database consistency)
+# Note: For better performance, consider increasing to 2-3 replicas
+# if your Railway plan supports it and you have proper session handling
 numReplicas = 1
 
 # Restart policy
@@ -24,3 +26,17 @@ restartPolicyMaxRetries = 5
 # After initial setup, you can enable health checks via Railway dashboard:
 #   Path: /
 #   Timeout: 300 seconds
+
+# IMPORTANT: CPU and Memory limits must be set via Railway Dashboard:
+# 1. Go to your Railway project dashboard
+# 2. Select the service (openemr or MySQL)
+# 3. Go to Settings > Resource Limits
+# 4. Adjust vCPU and RAM sliders
+# 
+# Recommended minimums for production:
+# - OpenEMR: 2 vCPU, 2GB RAM
+# - MySQL: 2 vCPU, 2GB RAM
+# 
+# For better performance with demo data:
+# - OpenEMR: 4 vCPU, 4GB RAM
+# - MySQL: 4 vCPU, 4GB RAM
