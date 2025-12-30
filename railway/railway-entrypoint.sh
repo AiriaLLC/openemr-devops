@@ -214,8 +214,28 @@ restore_site_template() {
 # Check if site configuration files exist
 CONFIG_FILE="${SITES_DIR}/config.php"
 
+# Check for proper site structure - need more than just sqlconf.php
+# A complete site should have specific files/directories from the template
+site_needs_restore() {
+    # If directory doesn't exist, needs restore
+    [ ! -d "${SITES_DIR}" ] && return 0
+    
+    # If sqlconf.php doesn't exist, needs restore
+    [ ! -f "${SITES_DIR}/sqlconf.php" ] && return 0
+    
+    # If FORCE_SITE_RESTORE is set, force restore
+    [ "${FORCE_SITE_RESTORE}" = "yes" ] && echo "FORCE_SITE_RESTORE=yes - forcing restore" && return 0
+    
+    # Check for key files that should exist in a complete site
+    # If these are missing, the site template wasn't properly restored
+    [ ! -d "${SITES_DIR}/documents" ] && echo "documents directory missing" && return 0
+    
+    # Site appears complete
+    return 1
+}
+
 # Check if sites/default directory is missing or incomplete
-if [ ! -d "${SITES_DIR}" ] || [ ! -f "${SITES_DIR}/sqlconf.php" ]; then
+if site_needs_restore; then
     echo ""
     echo "Site directory missing or incomplete - checking database..."
     
