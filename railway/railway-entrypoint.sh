@@ -162,32 +162,30 @@ SQLCONF
     echo "Created ${SQLCONF_FILE}"
 }
 
-# Check if sqlconf.php exists (indicates setup is complete)
-if [ ! -f "${SQLCONF_FILE}" ]; then
+# Check if database already has tables (restored backup scenario)
+# Even if sqlconf.php exists (default template), we need to recreate it if database is already configured
+echo ""
+echo "Checking if database is already initialized..."
+if check_database_exists; then
     echo ""
-    echo "No sqlconf.php found - checking if database is already initialized..."
+    echo "======================================"
+    echo "EXISTING DATABASE DETECTED"
+    echo "======================================"
+    echo "Database '${MYSQL_DATABASE}' already contains OpenEMR tables."
+    echo "Creating/updating configuration to connect to existing database..."
+    echo ""
     
-    if check_database_exists; then
-        echo ""
-        echo "======================================"
-        echo "EXISTING DATABASE DETECTED"
-        echo "======================================"
-        echo "Database '${MYSQL_DATABASE}' already contains OpenEMR tables."
-        echo "Creating configuration to connect to existing database..."
-        echo ""
-        
-        create_sqlconf
-        
-        # Also set EMPTY env var to prevent auto_configure from running
-        export EMPTY="yes"
-        
-        echo "Database recovery complete. OpenEMR will use existing data."
-        echo ""
-    else
-        echo "No existing database found - will run normal setup."
-    fi
+    create_sqlconf
+    
+    # Also set EMPTY env var to prevent auto_configure from running
+    export EMPTY="yes"
+    
+    echo "Database recovery complete. OpenEMR will use existing data."
+    echo ""
+elif [ ! -f "${SQLCONF_FILE}" ]; then
+    echo "No existing database found and no sqlconf.php - will run normal setup."
 else
-    echo "sqlconf.php exists - using existing configuration."
+    echo "sqlconf.php exists and database is empty - will run normal setup."
 fi
 
 echo "======================================"
