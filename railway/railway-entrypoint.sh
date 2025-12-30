@@ -83,6 +83,30 @@ if [ "${MANUAL_SETUP}" = "yes" ]; then
     echo ""
 fi
 
+# If database already has tables but sqlconf.php is missing, create it
+if [ -n "${MYSQL_HOST}" ] && [ -n "${MYSQL_ROOT_PASS}" ]; then
+    SQLCONF_FILE="/var/www/localhost/htdocs/openemr/sites/default/sqlconf.php"
+    if [ ! -f "${SQLCONF_FILE}" ]; then
+        echo "Checking if database is already configured..."
+        cd /var/www/localhost/htdocs/openemr
+        TABLE_COUNT=$(php -r "\$conn = @mysqli_connect('${MYSQL_HOST}', '${MYSQL_USER:-root}', '${MYSQL_ROOT_PASS}', '${MYSQL_DATABASE:-openemr}', ${MYSQL_PORT:-3306}); if (\$conn) { \$result = mysqli_query(\$conn, \"SELECT COUNT(*) as cnt FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE:-openemr}'\"); \$row = mysqli_fetch_assoc(\$result); echo \$row['cnt'] ?? 0; mysqli_close(\$conn); } else { echo 0; }" 2>/dev/null)
+        if [ -n "${TABLE_COUNT}" ] && [ "${TABLE_COUNT}" -gt 0 ]; then
+            echo "Database has ${TABLE_COUNT} tables. Creating sqlconf.php..."
+            mkdir -p /var/www/localhost/htdocs/openemr/sites/default
+            cat > "${SQLCONF_FILE}" <<EOF
+<?php
+\$host = "${MYSQL_HOST}";
+\$port = "${MYSQL_PORT:-3306}";
+\$login = "${MYSQL_USER:-root}";
+\$pass = "${MYSQL_PASS:-${MYSQL_ROOT_PASS}}";
+\$dbase = "${MYSQL_DATABASE:-openemr}";
+\$config = 1;
+EOF
+            echo "sqlconf.php created."
+        fi
+    fi
+fi
+
 echo "======================================"
 echo "Starting OpenEMR..."
 echo "======================================"
