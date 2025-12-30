@@ -92,28 +92,46 @@ SQLCONF_FILE="${SITES_DIR}/sqlconf.php"
 
 check_database_exists() {
     if [ -z "${MYSQL_HOST}" ] || [ -z "${MYSQL_DATABASE}" ]; then
+        echo "Missing MYSQL_HOST or MYSQL_DATABASE"
+        return 1
+    fi
+    
+    # Use defaults if not set
+    DB_USER="${MYSQL_USER:-root}"
+    DB_PASS="${MYSQL_PASS:-${MYSQL_ROOT_PASS}}"
+    DB_PORT="${MYSQL_PORT:-3306}"
+    
+    if [ -z "${DB_PASS}" ]; then
+        echo "Missing MySQL password"
         return 1
     fi
     
     # Wait for MySQL to be ready (max 30 seconds)
     echo "Checking MySQL connectivity..."
     for i in $(seq 1 30); do
-        if mysql -h "${MYSQL_HOST}" -P "${MYSQL_PORT:-3306}" -u "${MYSQL_USER}" -p"${MYSQL_PASS}" \
+        if mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
             -e "SELECT 1" "${MYSQL_DATABASE}" >/dev/null 2>&1; then
             echo "MySQL is ready."
             break
+        fi
+        if [ $i -eq 30 ]; then
+            echo "MySQL connection failed after 30 attempts"
+            return 1
         fi
         echo "Waiting for MySQL... ($i/30)"
         sleep 1
     done
     
     # Check if the users table exists (core OpenEMR table)
-    TABLE_EXISTS=$(mysql -h "${MYSQL_HOST}" -P "${MYSQL_PORT:-3306}" -u "${MYSQL_USER}" -p"${MYSQL_PASS}" \
-        -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name='users';" 2>/dev/null || echo "0")
+    echo "Checking if database has tables..."
+    TABLE_EXISTS=$(mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
+        -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${MYSQL_DATABASE}' AND table_name='users';" 2>&1)
     
-    if [ "$TABLE_EXISTS" = "1" ]; then
+    if echo "${TABLE_EXISTS}" | grep -q "^1$"; then
+        echo "Found existing OpenEMR database with users table"
         return 0
     fi
+    echo "No existing tables found (result: ${TABLE_EXISTS})"
     return 1
 }
 
