@@ -4,7 +4,8 @@
 FROM openemr/openemr:7.0.3
 
 # Copy Railway-specific entrypoint wrapper
-COPY railway/railway-entrypoint.sh /railway-entrypoint.sh
+# Note: Railway sets root directory to /railway, so paths are relative to that
+COPY railway-entrypoint.sh /railway-entrypoint.sh
 RUN chmod +x /railway-entrypoint.sh
 
 # Railway uses PORT environment variable
