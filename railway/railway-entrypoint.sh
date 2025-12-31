@@ -83,6 +83,18 @@ if [ "${MANUAL_SETUP}" = "yes" ]; then
     echo ""
 fi
 
+# Remove default template sqlconf.php if it exists (has wrong credentials)
+# OpenEMR will create a new one with the correct Railway credentials
+TEMPLATE_SQLCONF="/var/www/localhost/htdocs/openemr/sites/default/sqlconf.php"
+if [ -f "${TEMPLATE_SQLCONF}" ]; then
+    # Check if it's the default template (has localhost)
+    if grep -q "localhost" "${TEMPLATE_SQLCONF}" 2>/dev/null; then
+        echo "Removing default template sqlconf.php (has wrong credentials)..."
+        rm -f "${TEMPLATE_SQLCONF}"
+        echo "Template removed. OpenEMR will create sqlconf.php with correct credentials."
+    fi
+fi
+
 echo "======================================"
 echo "Starting OpenEMR..."
 echo "======================================"
