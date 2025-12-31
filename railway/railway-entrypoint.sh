@@ -192,32 +192,39 @@ SQLCONF
     echo "Created ${SQLCONF_FILE} with correct permissions"
 }
 
-# Check if sqlconf.php exists (indicates setup is complete)
-if [ ! -f "${SQLCONF_FILE}" ]; then
+# Always check database state first, regardless of sqlconf.php existence
+# This ensures we handle restored databases correctly
+echo ""
+echo "Checking database state..."
+
+if check_database_exists; then
     echo ""
-    echo "No sqlconf.php found - checking if database is already initialized..."
+    echo "======================================"
+    echo "EXISTING DATABASE DETECTED"
+    echo "======================================"
+    echo "Database '${MYSQL_DATABASE}' already contains OpenEMR tables."
     
-    if check_database_exists; then
-        echo ""
-        echo "======================================"
-        echo "EXISTING DATABASE DETECTED"
-        echo "======================================"
-        echo "Database '${MYSQL_DATABASE}' already contains OpenEMR tables."
-        echo "Creating configuration to connect to existing database..."
-        echo ""
-        
-        create_sqlconf
-        
-        # Also set EMPTY env var to prevent auto_configure from running
-        export EMPTY="yes"
-        
-        echo "Database recovery complete. OpenEMR will use existing data."
-        echo ""
+    # Create or update sqlconf.php to ensure correct configuration
+    if [ ! -f "${SQLCONF_FILE}" ]; then
+        echo "Creating sqlconf.php for existing database..."
     else
-        echo "No existing database found - will run normal setup."
+        echo "Updating sqlconf.php to ensure correct configuration..."
     fi
+    
+    create_sqlconf
+    
+    # Set EMPTY env var to prevent auto_configure from running
+    export EMPTY="yes"
+    
+    echo "Database recovery complete. OpenEMR will use existing data."
+    echo ""
 else
-    echo "sqlconf.php exists - using existing configuration."
+    echo "No existing database found - will run normal setup."
+    if [ ! -f "${SQLCONF_FILE}" ]; then
+        echo "sqlconf.php will be created during auto-setup."
+    else
+        echo "sqlconf.php exists but database is empty - auto-setup will handle this."
+    fi
 fi
 
 echo "======================================"
