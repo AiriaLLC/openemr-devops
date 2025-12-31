@@ -83,6 +83,17 @@ if [ "${MANUAL_SETUP}" = "yes" ]; then
     echo ""
 fi
 
+# Remove default template sqlconf.php if it exists (has wrong credentials: localhost/openemr)
+# OpenEMR will create a new one with the correct Railway credentials during auto-setup
+TEMPLATE_SQLCONF="/var/www/localhost/htdocs/openemr/sites/default/sqlconf.php"
+if [ -f "${TEMPLATE_SQLCONF}" ]; then
+    if grep -q "localhost" "${TEMPLATE_SQLCONF}" 2>/dev/null; then
+        echo "Removing default template sqlconf.php (has wrong credentials: localhost)..."
+        rm -f "${TEMPLATE_SQLCONF}"
+        echo "Template removed. OpenEMR will create sqlconf.php with correct Railway credentials."
+    fi
+fi
+
 # ============================================================
 # Railway-specific: Check if database already has tables
 # This prevents the "table already exists" crash on container restart
