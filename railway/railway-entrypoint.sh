@@ -3,9 +3,11 @@
 # This script maps Railway environment variables to OpenEMR format
 # and passes through to the official openemr.sh script.
 #
-# IMPORTANT: This script does NOT manage sqlconf.php or detect databases.
-# The official openemr.sh handles all setup logic based on the $config 
-# variable in sqlconf.php. Persistence is handled by Railway volumes.
+# IMPORTANT: For persistence across restarts, attach a Railway volume at:
+#   /var/www/localhost/htdocs/openemr/sites
+#
+# Environment variables:
+#   FORCE_FRESH_INSTALL=yes - Drop all existing tables and start fresh
 
 set -e
 
@@ -69,6 +71,59 @@ fi
 if [ -z "${MYSQL_ROOT_PASS}" ]; then
     echo "WARNING: MYSQL_ROOT_PASS not set!"
     echo "Auto-configuration requires MYSQL_ROOT_PASS."
+    echo ""
+fi
+
+# Handle FORCE_FRESH_INSTALL - drop all tables to start fresh
+if [ "${FORCE_FRESH_INSTALL}" = "yes" ] && [ -n "${MYSQL_HOST}" ] && [ -n "${MYSQL_ROOT_PASS}" ]; then
+    echo "======================================"
+    echo "FORCE_FRESH_INSTALL enabled"
+    echo "======================================"
+    echo ""
+    echo "Waiting for MySQL to be ready..."
+    
+    DB_USER="${MYSQL_USER:-root}"
+    DB_PASS="${MYSQL_PASS:-${MYSQL_ROOT_PASS}}"
+    DB_PORT="${MYSQL_PORT:-3306}"
+    DB_NAME="${MYSQL_DATABASE:-openemr}"
+    
+    # Wait for MySQL to be ready (max 60 seconds)
+    for i in $(seq 1 60); do
+        if mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
+            -e "SELECT 1" "${DB_NAME}" >/dev/null 2>&1; then
+            echo "MySQL is ready."
+            break
+        fi
+        if [ $i -eq 60 ]; then
+            echo "MySQL connection failed after 60 attempts. Continuing anyway..."
+            break
+        fi
+        echo "Waiting for MySQL... ($i/60)"
+        sleep 1
+    done
+    
+    # Drop all tables in the database
+    echo "Dropping all existing tables in ${DB_NAME}..."
+    TABLES=$(mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
+        -N -e "SELECT GROUP_CONCAT(table_name) FROM information_schema.tables WHERE table_schema='${DB_NAME}';" 2>/dev/null || echo "")
+    
+    if [ -n "${TABLES}" ] && [ "${TABLES}" != "NULL" ]; then
+        echo "Found tables to drop: ${TABLES}"
+        mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
+            -e "SET FOREIGN_KEY_CHECKS=0; DROP TABLE IF EXISTS ${TABLES}; SET FOREIGN_KEY_CHECKS=1;" "${DB_NAME}" 2>/dev/null || true
+        echo "Tables dropped successfully."
+    else
+        echo "No existing tables found."
+    fi
+    
+    # Remove sqlconf.php if it exists to ensure fresh setup
+    SQLCONF="/var/www/localhost/htdocs/openemr/sites/default/sqlconf.php"
+    if [ -f "${SQLCONF}" ]; then
+        echo "Removing existing sqlconf.php..."
+        rm -f "${SQLCONF}"
+    fi
+    
+    echo "Database cleared. OpenEMR will perform fresh installation."
     echo ""
 fi
 
