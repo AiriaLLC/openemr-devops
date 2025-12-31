@@ -1,87 +1,110 @@
 # OpenEMR Railway Deployment
 
-This directory contains configuration files optimized for deploying OpenEMR on [Railway](https://railway.app).
+Deploy [OpenEMR](https://www.open-emr.org/) on [Railway](https://railway.app) with minimal configuration.
 
 ## Quick Start
 
-### 1. Create a Railway Project
+### 1. Create Railway Project
 
 1. Go to [Railway](https://railway.app) and create a new project
-2. Add a **MySQL** database service from the Railway dashboard
-3. Deploy from this GitHub repository
+2. Add a **MySQL** database from the Railway dashboard
 
-### 2. Configure Environment Variables
+### 2. Deploy OpenEMR
 
-Railway will automatically provide MySQL connection variables. Additionally, you should set:
+1. Create a new service from your GitHub repository
+2. Set the root directory if needed (Railway will detect `railway.toml`)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OE_USER` | OpenEMR admin username | `admin` |
-| `OE_PASS` | OpenEMR admin password | `pass` |
-| `MANUAL_SETUP` | Set to `yes` to skip auto-configuration | - |
+### 3. Configure Environment Variables
 
-### 3. Deploy
+In the OpenEMR service settings, add these variables:
 
-Railway will automatically build and deploy using the `railway/Dockerfile`.
+| Variable | Value | Description |
+|----------|-------|-------------|
+| `MYSQL_HOST` | `${{MySQL.MYSQLHOST}}` | MySQL hostname (use Railway reference) |
+| `MYSQL_PORT` | `${{MySQL.MYSQLPORT}}` | MySQL port |
+| `MYSQL_DATABASE` | `${{MySQL.MYSQLDATABASE}}` | Database name |
+| `MYSQL_USER` | `${{MySQL.MYSQLUSER}}` | MySQL username |
+| `MYSQL_PASS` | `${{MySQL.MYSQLPASSWORD}}` | MySQL password |
+| `MYSQL_ROOT_PASS` | `${{MySQL.MYSQLPASSWORD}}` | MySQL root password (same as MYSQL_PASS for Railway) |
+| `OE_USER` | `admin` | OpenEMR admin username |
+| `OE_PASS` | `<your-password>` | OpenEMR admin password |
 
-**Important**: The first deployment takes 5-10 minutes as OpenEMR initializes the database schema and configuration.
+### 4. Configure Volumes (Critical!)
 
-## How It Works
+**You MUST attach a volume to persist OpenEMR data across deployments.**
 
-This deployment uses the official `openemr/openemr:7.0.3` Docker image with a custom entrypoint that:
+1. Go to OpenEMR service → Settings → Volumes
+2. Add a volume with mount path: `/var/www/localhost/htdocs/openemr/sites`
+3. Save and redeploy
 
-1. **Parses Railway's MySQL environment variables** - Automatically configures database connection
-2. **Handles auto-configuration** - Sets up OpenEMR database schema on first boot
-3. **Starts Apache** - Serves the OpenEMR application
+Without this volume, OpenEMR will try to re-initialize on every restart.
 
-## Environment Variables
+### 5. Wait for Initialization
 
-### Automatic (from Railway MySQL)
+First deployment takes **5-10 minutes** as OpenEMR:
+- Creates database schema
+- Populates initial data
+- Configures the application
 
-Railway's MySQL addon provides these variables automatically:
-- `DATABASE_URL` - Full MySQL connection string
-- `MYSQLHOST`, `MYSQLPORT`, `MYSQLDATABASE`, `MYSQLUSER`, `MYSQLPASSWORD`
+Monitor progress in the deployment logs.
 
-### Manual Configuration
+### 6. Access OpenEMR
 
-If using an external MySQL database:
+Once deployed, access your OpenEMR instance at the Railway-provided URL or your custom domain.
 
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `MYSQL_HOST` | MySQL hostname | Yes |
-| `MYSQL_PORT` | MySQL port | No (default: 3306) |
-| `MYSQL_DATABASE` | Database name | No (default: openemr) |
-| `MYSQL_USER` | MySQL user | No (default: openemr) |
-| `MYSQL_PASS` | MySQL password | Yes |
-| `MYSQL_ROOT_PASS` | MySQL root password | Yes (for auto-setup) |
+Default credentials (if using defaults):
+- Username: `admin`
+- Password: `pass`
 
-## Post-Deployment
+**Change these immediately after first login!**
 
-1. **Access OpenEMR** at your Railway-provided URL
-2. **Login** with the credentials you configured (default: admin/pass)
-3. **Change the default password immediately**
-4. **Configure** OpenEMR settings via Administration menu
+## Architecture
 
-## Troubleshooting
-
-### Deployment Takes Too Long
-OpenEMR's first boot involves database initialization which can take 5-10 minutes. Check the deployment logs for progress.
-
-### 502 Bad Gateway
-If you see this error during deployment, wait a few minutes. OpenEMR is likely still initializing.
-
-### Database Connection Errors
-Ensure Railway's MySQL service is running and the environment variables are properly linked.
+```
+┌─────────────────────────────────────────────────────┐
+│                  Railway Project                     │
+│                                                      │
+│  ┌──────────────┐         ┌──────────────────────┐  │
+│  │    MySQL     │◄───────►│      OpenEMR         │  │
+│  │   Service    │ private │      Service         │  │
+│  │              │ network │                      │  │
+│  │  Volume:     │         │  Volume:             │  │
+│  │  /var/lib/   │         │  /var/www/.../sites  │  │
+│  │  mysql       │         │                      │  │
+│  └──────────────┘         └──────────────────────┘  │
+│                                    │                 │
+└────────────────────────────────────│─────────────────┘
+                                     │ HTTPS
+                                     ▼
+                              Your Domain/URL
+```
 
 ## Files
 
-- `Dockerfile` - Railway-optimized Docker configuration
-- `railway-entrypoint.sh` - Custom entrypoint for Railway environment
+- `Dockerfile` - Wraps official `openemr/openemr:7.0.3` image
+- `railway-entrypoint.sh` - Maps Railway env vars to OpenEMR format
 - `railway.toml` - Railway deployment configuration
 
-## Support
+## Troubleshooting
 
-- [OpenEMR Documentation](https://www.open-emr.org/wiki/index.php/OpenEMR_Wiki_Home_Page)
-- [OpenEMR Forum](https://community.open-emr.org/)
+### 502 Bad Gateway
+OpenEMR is still initializing. Wait 5-10 minutes and check logs.
+
+### Database Connection Errors
+- Verify MySQL service is running
+- Check environment variables are correctly set
+- Ensure you're using Railway variable references (`${{MySQL.MYSQLHOST}}`)
+
+### "Table already exists" on restart
+The sites volume is not attached. Add a volume at `/var/www/localhost/htdocs/openemr/sites`.
+
+### Slow Performance
+Increase resources via Railway dashboard:
+- OpenEMR: 2+ vCPU, 2+ GB RAM
+- MySQL: 2+ vCPU, 2+ GB RAM
+
+## Resources
+
+- [OpenEMR Documentation](https://www.open-emr.org/wiki/)
+- [OpenEMR Docker Hub](https://hub.docker.com/r/openemr/openemr)
 - [Railway Documentation](https://docs.railway.app)
-
