@@ -7,7 +7,7 @@
 #   /var/www/localhost/htdocs/openemr/sites
 #
 # Environment variables:
-#   FORCE_FRESH_INSTALL=yes - Drop all existing tables and start fresh
+#   FORCE_FRESH_INSTALL=yes - Drop all existing tables and start fresh (one-time)
 
 set -e
 
@@ -62,69 +62,144 @@ echo "  MySQL User: ${MYSQL_USER:-not set}"
 echo "  OpenEMR Admin: ${OE_USER}"
 echo ""
 
-if [ -z "${MYSQL_HOST}" ]; then
-    echo "WARNING: MYSQL_HOST not set!"
-    echo "OpenEMR requires a MySQL database connection."
-    echo ""
-fi
+# ============================================================
+# Volume initialization
+# When a Railway volume is mounted at /var/www/.../sites,
+# it starts empty. We need to copy the default site files.
+# ============================================================
+SITES_DIR="/var/www/localhost/htdocs/openemr/sites"
+DEFAULT_SITE="${SITES_DIR}/default"
+SQLCONF="${DEFAULT_SITE}/sqlconf.php"
+SITES_INITIALIZED_FLAG="${SITES_DIR}/.railway-initialized"
 
-if [ -z "${MYSQL_ROOT_PASS}" ]; then
-    echo "WARNING: MYSQL_ROOT_PASS not set!"
-    echo "Auto-configuration requires MYSQL_ROOT_PASS."
-    echo ""
-fi
+# Check if the volume needs initialization
+if [ ! -f "${SITES_INITIALIZED_FLAG}" ]; then
+    echo "======================================"
+    echo "Initializing sites volume..."
+    echo "======================================"
+    
+    # Check if the default directory is missing or empty
+    if [ ! -d "${DEFAULT_SITE}" ] || [ ! -f "${SQLCONF}" ]; then
+        echo "Sites volume is empty. Copying default site files..."
+        
+        # The OpenEMR image has a backup of sites at /root/sites or we can create minimal structure
+        if [ -d "/root/sites" ]; then
+            cp -r /root/sites/* "${SITES_DIR}/" 2>/dev/null || true
+        fi
+        
+        # If still missing, create minimal structure for auto-setup
+        if [ ! -d "${DEFAULT_SITE}" ]; then
+            echo "Creating default site structure..."
+            mkdir -p "${DEFAULT_SITE}/documents/certificates"
+            mkdir -p "${DEFAULT_SITE}/documents/custom_pdf"
+            mkdir -p "${DEFAULT_SITE}/documents/logs"
+            mkdir -p "${DEFAULT_SITE}/documents/smarty/gacl"
+            mkdir -p "${DEFAULT_SITE}/documents/smarty/main"
+            mkdir -p "${DEFAULT_SITE}/documents/mpdf/pdf_tmp"
+            mkdir -p "${DEFAULT_SITE}/documents/onsite_portal_documents"
+            
+            # Create minimal sqlconf.php with config=0 (unconfigured)
+            cat > "${SQLCONF}" << 'SQLEOF'
+<?php
+// OpenEMR - MySQL Config
 
-# Handle FORCE_FRESH_INSTALL - drop all tables to start fresh
-if [ "${FORCE_FRESH_INSTALL}" = "yes" ] && [ -n "${MYSQL_HOST}" ] && [ -n "${MYSQL_ROOT_PASS}" ]; then
-    echo "======================================"
-    echo "FORCE_FRESH_INSTALL enabled"
-    echo "======================================"
-    echo ""
-    echo "Waiting for MySQL to be ready..."
-    
-    DB_USER="${MYSQL_USER:-root}"
-    DB_PASS="${MYSQL_PASS:-${MYSQL_ROOT_PASS}}"
-    DB_PORT="${MYSQL_PORT:-3306}"
-    DB_NAME="${MYSQL_DATABASE:-openemr}"
-    
-    # Wait for MySQL to be ready (max 60 seconds)
-    for i in $(seq 1 60); do
-        if mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
-            -e "SELECT 1" "${DB_NAME}" >/dev/null 2>&1; then
-            echo "MySQL is ready."
-            break
+$host = 'localhost';
+$port = '3306';
+$login = 'openemr';
+$pass = 'openemr';
+$dbase = 'openemr';
+$db_encoding = 'utf8mb4';
+
+$config = 0; // 0 = unconfigured, 1 = configured
+SQLEOF
+            
+            chmod 666 "${SQLCONF}"
+            chown -R apache:apache "${SITES_DIR}" 2>/dev/null || true
         fi
-        if [ $i -eq 60 ]; then
-            echo "MySQL connection failed after 60 attempts. Continuing anyway..."
-            break
-        fi
-        echo "Waiting for MySQL... ($i/60)"
-        sleep 1
-    done
-    
-    # Drop all tables in the database
-    echo "Dropping all existing tables in ${DB_NAME}..."
-    TABLES=$(mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
-        -N -e "SELECT GROUP_CONCAT(table_name) FROM information_schema.tables WHERE table_schema='${DB_NAME}';" 2>/dev/null || echo "")
-    
-    if [ -n "${TABLES}" ] && [ "${TABLES}" != "NULL" ]; then
-        echo "Found tables to drop: ${TABLES}"
-        mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
-            -e "SET FOREIGN_KEY_CHECKS=0; DROP TABLE IF EXISTS ${TABLES}; SET FOREIGN_KEY_CHECKS=1;" "${DB_NAME}" 2>/dev/null || true
-        echo "Tables dropped successfully."
+        
+        echo "Sites volume initialized."
     else
-        echo "No existing tables found."
+        echo "Sites volume already has content."
     fi
     
-    # Remove sqlconf.php if it exists to ensure fresh setup
-    SQLCONF="/var/www/localhost/htdocs/openemr/sites/default/sqlconf.php"
-    if [ -f "${SQLCONF}" ]; then
-        echo "Removing existing sqlconf.php..."
-        rm -f "${SQLCONF}"
-    fi
-    
-    echo "Database cleared. OpenEMR will perform fresh installation."
+    # Create flag file to prevent re-initialization
+    touch "${SITES_INITIALIZED_FLAG}"
     echo ""
+fi
+
+# ============================================================
+# Handle FORCE_FRESH_INSTALL - drop all tables to start fresh
+# This only runs once per deployment
+# ============================================================
+FRESH_INSTALL_FLAG="${SITES_DIR}/.fresh-install-completed"
+
+if [ "${FORCE_FRESH_INSTALL}" = "yes" ] && [ ! -f "${FRESH_INSTALL_FLAG}" ]; then
+    if [ -n "${MYSQL_HOST}" ] && [ -n "${MYSQL_ROOT_PASS}" ]; then
+        echo "======================================"
+        echo "FORCE_FRESH_INSTALL enabled"
+        echo "======================================"
+        echo ""
+        echo "Waiting for MySQL to be ready..."
+        
+        DB_USER="${MYSQL_USER:-root}"
+        DB_PASS="${MYSQL_PASS:-${MYSQL_ROOT_PASS}}"
+        DB_PORT="${MYSQL_PORT:-3306}"
+        DB_NAME="${MYSQL_DATABASE:-openemr}"
+        
+        # Wait for MySQL to be ready (max 60 seconds)
+        for i in $(seq 1 60); do
+            if mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
+                -e "SELECT 1" "${DB_NAME}" >/dev/null 2>&1; then
+                echo "MySQL is ready."
+                break
+            fi
+            if [ $i -eq 60 ]; then
+                echo "MySQL connection failed after 60 attempts. Continuing anyway..."
+                break
+            fi
+            echo "Waiting for MySQL... ($i/60)"
+            sleep 1
+        done
+        
+        # Drop all tables in the database
+        echo "Dropping all existing tables in ${DB_NAME}..."
+        TABLES=$(mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
+            -N -e "SELECT GROUP_CONCAT(table_name SEPARATOR ',') FROM information_schema.tables WHERE table_schema='${DB_NAME}';" 2>/dev/null || echo "")
+        
+        if [ -n "${TABLES}" ] && [ "${TABLES}" != "NULL" ]; then
+            echo "Found tables to drop."
+            mysql -h "${MYSQL_HOST}" -P "${DB_PORT}" -u "${DB_USER}" -p"${DB_PASS}" \
+                -e "SET FOREIGN_KEY_CHECKS=0; DROP TABLE IF EXISTS ${TABLES}; SET FOREIGN_KEY_CHECKS=1;" "${DB_NAME}" 2>/dev/null || true
+            echo "Tables dropped successfully."
+        else
+            echo "No existing tables found."
+        fi
+        
+        # Reset sqlconf.php to unconfigured state
+        if [ -f "${SQLCONF}" ]; then
+            echo "Resetting sqlconf.php to unconfigured state..."
+            cat > "${SQLCONF}" << 'SQLEOF'
+<?php
+// OpenEMR - MySQL Config
+
+$host = 'localhost';
+$port = '3306';
+$login = 'openemr';
+$pass = 'openemr';
+$dbase = 'openemr';
+$db_encoding = 'utf8mb4';
+
+$config = 0; // 0 = unconfigured, 1 = configured
+SQLEOF
+            chmod 666 "${SQLCONF}"
+        fi
+        
+        # Create flag to prevent running again
+        touch "${FRESH_INSTALL_FLAG}"
+        
+        echo "Database cleared. OpenEMR will perform fresh installation."
+        echo ""
+    fi
 fi
 
 echo "======================================"
