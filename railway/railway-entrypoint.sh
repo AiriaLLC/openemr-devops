@@ -170,7 +170,8 @@ create_sqlconf() {
 SQLCONF
 
     chmod 644 "${SQLCONF_FILE}"
-    echo "Created ${SQLCONF_FILE}"
+    chown apache:root "${SQLCONF_FILE}"
+    echo "Created ${SQLCONF_FILE} with correct permissions"
 }
 
 # Check if sqlconf.php exists (indicates setup is complete)
